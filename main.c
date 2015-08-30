@@ -24,27 +24,25 @@ int csock, dsock;
 
 int main( int argc, char **argv ) {
     char *ip, *port;
- 
+     
     if ( argc != 3 ) {
-        printf("arg count != 3\n");
+        printf("usage: %s ip port\n", argv[0]);
         exit(1);
     }
     ip = argv[1];
     port = argv[2];
 
-    printf("argv[1] = %s argv[2] = %s\n", argv[1], argv[2]);
-
+    //printf("argv[1] = %s argv[2] = %s\n", argv[1], argv[2]);
+    // Make ng_socket node to work with netgraph subsystem
     makeNgSocket(&csock, &dsock);
+    // Make ng_ksocket node and deal with it
     makeKsocket(ip, port);
-    while (1) {
-
-    }
 }
 
 void makeNgSocket (int *csock, int *dsock) {
-    char name[22];
+    char name[NG_PATHSIZ];
 
-   memset(name, 0, sizeof(name));
+    memset(name, 0, sizeof(name));
     sprintf(name, "hello-socket");
     if (NgMkSockNode(name, csock, dsock) < 0) {
         printf("Error: %s\n", strerror(errno));      
@@ -53,6 +51,10 @@ void makeNgSocket (int *csock, int *dsock) {
 }
 
 void makeKsocket( char *ip, char *port) {
+    /* Make ng_ksocket node then send 
+     * to it message that wil read from 
+     * stdin 
+     * */
     int errCode, token;
     u_char buf[200];
     char path[NG_PATHSIZ];
@@ -66,6 +68,7 @@ void makeKsocket( char *ip, char *port) {
     connectNg(ip, port);
    
     memset(buf, 0, sizeof(buf));
+    printf("Type message to send through socket 199 character max: ");
     fgets(buf, 200, stdin);
     //sprintf(buf, "GET / \n");
     
@@ -73,8 +76,7 @@ void makeKsocket( char *ip, char *port) {
     sprintf(ourhook, "left");
     sendData(dsock, buf, ourhook);
    
-    fd = fopen("tmp.txt", "w");
-    NgSetDebug(0);
+    //fd = fopen("tmp.txt", "w");
     //while ( (data = NgRecvData( dsock, new_buf, (size_t )2047, hook )) > 0 ) {
     //    received_bytes += data;
     //    printf("Received new portion of data size = %d\n", data);
@@ -84,19 +86,21 @@ void makeKsocket( char *ip, char *port) {
         received_bytes += data;
         if (hook != "left") {
             printf("Received new portion of data size = %d strlen(buf_alloc) = %d\n", data, strlen(buf_alloc));
-            fwrite(buf_alloc, data, 1, fd);
+            fwrite(buf_alloc, data, 1, stdout);
             //memset(buf_alloc, 0, data);
             free(buf_alloc);
+            /*
             if (received_bytes >= 100000000) {
                 fflush(fd);
             }
+            */
         } else {
             printf("Received unexpected data on hook %s\n", hook);
         }
     }
-    fclose(fd);
+    //fclose(fd);
 
-    printf("Now data = %d Total bytes = %d\n", data, received_bytes);
+    //printf("Now data = %d Total bytes = %d\n", data, received_bytes);
 }
 
 void sendData ( int dsock, char *buf , char *ourhook) {
@@ -175,12 +179,13 @@ void connectNg (char *ip, char *port) {
     ip4addr.sin_family = AF_INET;
     ip4addr.sin_port = htons(atoi(port));
     ip4addr.sin_len = sizeof(struct sockaddr_in);
-    inet_pton(AF_INET, ip, &ip4addr.sin_addr);
+    if ( inet_pton(AF_INET, ip, &ip4addr.sin_addr) == 0 ) {
+        printf("Invalid input: %s - not valid ip address\n", ip);
+        exit(1);
+    }
  
 
-    NgSetDebug(3); 
     tcpNoDelay("tcp_client_ksocket:");
-    //soRecvbuf("tcp_client_ksocket:", 65535);
     errCode = NgSendMsg( csock, path, NGM_KSOCKET_COOKIE, NGM_KSOCKET_CONNECT,  &ip4addr, sizeof(ip4addr) );
     if ( token < 0 && errno != EINPROGRESS ) {
         printf("Error connecting to %s : %s\n", inet_ntoa(ip4addr.sin_addr), strerror(errno));
@@ -190,8 +195,7 @@ void connectNg (char *ip, char *port) {
     if ( NgAllocRecvMsg(csock, &resp, NULL) < 0 ) {
         printf("Error receiving response on ksocket_connect: %s\n", strerror(errno));
     } else {
-        int i;
-        printf("Rceived data int resp: %s\n", (char *)resp->data );
+        //printf("Rceived data int resp: %s\n", (char *)resp->data );
         free(resp);
     }
 }
